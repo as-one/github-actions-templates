@@ -1,0 +1,33 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        function: ['events', 'loader']
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.8'
+
+      - name: Install Dependencies
+        uses: nick-invision/retry@v1
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: pip install -r src/functions/${{ matrix.function }}/requirements-dev.txt
+
+      - name: Execute pytest
+        run: pytest src/functions/${{ matrix.function }} --cov=src/functions/${{ matrix.function }} --cov-report term
+        env:
+          PYTHONPATH: src/functions/${{ matrix.function }}

@@ -1,0 +1,93 @@
+name: Cypress
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: sodium
+          tools: composer:2.2
+          coverage: none
+
+      - name: Setup Composer
+        run: composer config --global --auth http-basic.repo.packagist.com token ef832cdaf532cd373dbaa4478a6b4a751348aeafde90ec4ccddc6be07d7a
+
+      - name: Install Dependencies
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: composer install --no-interaction --no-progress
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16.x
+
+      - name: Cache pnpm modules
+        uses: actions/cache@v2
+        with:
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-
+
+      - name: Install Dependencies
+        uses: pnpm/action-setup@v2.2.1
+        with:
+          run_install: true
+          version: 6.32.12
+
+      - name: Setup environment
+        run: cp .env.testing .env
+
+      - name: Start docker
+        run: make up
+
+      - name: Create DynamoDB
+        run: make dynamodb
+
+      - name: Cypress run
+        uses: cypress-io/github-action@v3
+        with:
+          install: false
+          build: pnpm run prod
+          command: pnpm run cypress:run -- --headless
+          wait-on: http://127.0.0.1:8080
+
+      - name: Upload videos artifacts
+        uses: actions/upload-artifact@v3
+        if: failure()
+        with:
+          name: videos
+          path: resources/js/cypress/videos
+          retention-days: 1
+
+      - name: Upload screenshots artifacts
+        uses: actions/upload-artifact@v3
+        if: failure()
+        with:
+          name: screenshots
+          path: resources/js/cypress/screenshots
+          retention-days: 1
+
+      - name: Upload laravel log artifact
+        uses: actions/upload-artifact@v3
+        if: failure()
+        with:
+          name: laravel
+          path: storage/logs/laravel.log
+          retention-days: 1

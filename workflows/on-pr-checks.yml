@@ -1,0 +1,11 @@
+name: PR Checks
+
+on: pull_request
+
+jobs:
+  pr-check:
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Check For Merge Commits
+        uses: voxie-actions/no-merge-commits@v1.0.0

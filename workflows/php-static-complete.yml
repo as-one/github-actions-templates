@@ -1,0 +1,34 @@
+name: Static Analysis
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  psalm:
+    name: Psalm
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          tools: composer:2.2
+          coverage: none
+
+      - name: Setup Composer
+        run: composer config --global --auth http-basic.repo.packagist.com token 3117616040c636044c026223aed6d3c7e9cd097594061b487559fe5b2ba7
+
+      - name: Install Dependencies
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: composer update --no-interaction --no-progress
+
+      - name: Execute Psalm
+        run: vendor/bin/psalm.phar --no-progress --output-format=github

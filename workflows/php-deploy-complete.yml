@@ -1,0 +1,268 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - sandbox
+      - qa
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy_sandbox:
+    name: deploy sandbox
+    runs-on: ubuntu-20.04
+    if: github.ref == 'refs/heads/sandbox'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: sodium
+          tools: composer:2.2
+          coverage: none
+
+      - name: Setup Composer
+        run: composer config --global --auth http-basic.repo.packagist.com token ef832cdaf532cd373dbaa4478a6b4a751348aeafde90ec4ccddc6be07d7a
+
+      - name: Install Dependencies
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: composer install --no-interaction --no-progress --optimize-autoloader --no-dev
+
+      - name: Cache Events
+        run: php artisan event:cache
+
+      - name: Cache Routes
+        run: php artisan route:cache
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16.x
+
+      - name: Setup Pnpm
+        uses: pnpm/action-setup@v2.2.1
+        with:
+          run_install: true
+          version: 6.32.12
+
+      - name: Install Serverless
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 2
+          max_attempts: 5
+          command: wget -nv https://github.com/serverless/serverless/releases/download/v3.17.0/serverless-linux-x64 -O /usr/local/bin/serverless && chmod +x /usr/local/bin/serverless
+
+      - name: Download Public Key
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: curl -f -L -o resources/oauth-public.key https://registry.voxie.com/keys/core/202e0888.pem --create-dirs
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::266934024307:role/AttributionSandboxServerlessRole
+          role-duration-seconds: 3600
+          aws-region: us-east-1
+
+      - name: Build Env File
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: php env.php > env.json
+        env:
+          STAGE: sandbox
+
+      - name: Serverless Deploy
+        run: VOXIE_WORKFLOW_KMS_KEY=$(cat env.json | jq .key_id -r) serverless deploy --stage sandbox --verbose
+        env:
+          API_RESERVED_CONCURRENCY: 5
+          AWS_DEPLOYMENT_ROLE_ARN: arn:aws:iam::266934024307:role/AttributionSandboxCloudFormationRole
+          BUGSNAG_DATA_API_KEY: ${{ secrets.BUGSNAG_DATA_API_KEY }}
+          BUGSNAG_ORGANIZATION: ${{ secrets.BUGSNAG_ORGANIZATION }}
+          EVENTS_RESERVED_CONCURRENCY: 5
+          VOXIE_EVENT_FIREHOSE_TOPIC: arn:aws:sns:us-east-1:266934024307:voxie-firehose-event-bus-sandbox
+          VOXIE_MONITORING_FIREHOSE_TOPIC: arn:aws:sns:us-east-1:266934024307:monitoring-firehose
+
+  deploy_qa:
+    name: deploy qa
+    runs-on: ubuntu-20.04
+    if: github.ref == 'refs/heads/qa'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: sodium
+          tools: composer:2.2
+          coverage: none
+
+      - name: Setup Composer
+        run: composer config --global --auth http-basic.repo.packagist.com token ef832cdaf532cd373dbaa4478a6b4a751348aeafde90ec4ccddc6be07d7a
+
+      - name: Install Dependencies
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: composer install --no-interaction --no-progress --optimize-autoloader --no-dev
+
+      - name: Cache Events
+        run: php artisan event:cache
+
+      - name: Cache Routes
+        run: php artisan route:cache
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16.x
+
+      - name: Setup Pnpm
+        uses: pnpm/action-setup@v2.2.1
+        with:
+          run_install: true
+          version: 6.32.12
+
+      - name: Install Serverless
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 2
+          max_attempts: 5
+          command: wget -nv https://github.com/serverless/serverless/releases/download/v3.17.0/serverless-linux-x64 -O /usr/local/bin/serverless && chmod +x /usr/local/bin/serverless
+
+      - name: Download Public Key
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: curl -f -L -o resources/oauth-public.key https://registry.voxie.com/keys/core/907adf19.pem --create-dirs
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::266934024307:role/AttributionQaServerlessRole
+          role-duration-seconds: 3600
+          aws-region: us-east-1
+
+      - name: Build Env File
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: php env.php > env.json
+        env:
+          STAGE: qa
+
+      - name: Serverless Deploy
+        run: VOXIE_WORKFLOW_KMS_KEY=$(cat env.json | jq .key_id -r) serverless deploy --stage qa --verbose
+        env:
+          API_RESERVED_CONCURRENCY: 10
+          AWS_DEPLOYMENT_ROLE_ARN: arn:aws:iam::266934024307:role/AttributionQaCloudFormationRole
+          BUGSNAG_DATA_API_KEY: ${{ secrets.BUGSNAG_DATA_API_KEY }}
+          BUGSNAG_ORGANIZATION: ${{ secrets.BUGSNAG_ORGANIZATION }}
+          EVENTS_RESERVED_CONCURRENCY: 10
+          VOXIE_EVENT_FIREHOSE_TOPIC: arn:aws:sns:us-east-1:266934024307:voxie-firehose-event-bus-qa
+          VOXIE_MONITORING_FIREHOSE_TOPIC: arn:aws:sns:us-east-1:266934024307:monitoring-firehose
+
+  deploy_production:
+    name: deploy production
+    runs-on: ubuntu-20.04
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: sodium
+          tools: composer:2.2
+          coverage: none
+
+      - name: Setup Composer
+        run: composer config --global --auth http-basic.repo.packagist.com token ef832cdaf532cd373dbaa4478a6b4a751348aeafde90ec4ccddc6be07d7a
+
+      - name: Install Dependencies
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: composer install --no-interaction --no-progress --optimize-autoloader --no-dev
+
+      - name: Cache Events
+        run: php artisan event:cache
+
+      - name: Cache Routes
+        run: php artisan route:cache
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16.x
+
+      - name: Setup Pnpm
+        uses: pnpm/action-setup@v2.2.1
+        with:
+          run_install: true
+          version: 6.32.12
+
+      - name: Install Serverless
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 2
+          max_attempts: 5
+          command: wget -nv https://github.com/serverless/serverless/releases/download/v3.17.0/serverless-linux-x64 -O /usr/local/bin/serverless && chmod +x /usr/local/bin/serverless
+
+      - name: Download Public Key
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: curl -f -L -o resources/oauth-public.key https://registry.voxie.com/keys/core/d5b38219.pem --create-dirs
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::266934024307:role/AttributionProductionServerlessRole
+          role-duration-seconds: 3600
+          aws-region: us-east-1
+
+      - name: Build Env File
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: php env.php > env.json
+        env:
+          STAGE: production
+
+      - name: Serverless Deploy
+        run: VOXIE_WORKFLOW_KMS_KEY=$(cat env.json | jq .key_id -r) serverless deploy --stage production --verbose
+        env:
+          API_RESERVED_CONCURRENCY: 20
+          AWS_DEPLOYMENT_ROLE_ARN: arn:aws:iam::266934024307:role/AttributionProductionCloudFormationRole
+          BUGSNAG_DATA_API_KEY: ${{ secrets.BUGSNAG_DATA_API_KEY }}
+          BUGSNAG_ORGANIZATION: ${{ secrets.BUGSNAG_ORGANIZATION }}
+          EVENTS_RESERVED_CONCURRENCY: 20
+          VOXIE_EVENT_FIREHOSE_TOPIC: arn:aws:sns:us-east-1:266934024307:voxie-firehose-event-bus
+          VOXIE_MONITORING_FIREHOSE_TOPIC: arn:aws:sns:us-east-1:266934024307:monitoring-firehose

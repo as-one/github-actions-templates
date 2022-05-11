@@ -1,0 +1,181 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - sandbox
+      - qa
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy_sandbox:
+    name: deploy sandbox
+    runs-on: ubuntu-20.04
+    if: github.ref == 'refs/heads/sandbox'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16.x
+
+      - name: Setup Pnpm
+        uses: pnpm/action-setup@v2.2.1
+        with:
+          run_install: true
+          version: 6.32.6
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.8'
+
+      - name: Install Serverless
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 2
+          max_attempts: 5
+          command: wget -nv https://github.com/serverless/serverless/releases/download/v3.16.0/serverless-linux-x64 -O /usr/local/bin/serverless && chmod +x /usr/local/bin/serverless
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::266934024307:role/AttBridgeSandboxServerlessRole
+          role-duration-seconds: 3600
+          aws-region: us-east-1
+
+      - name: Serverless Deploy
+        run: serverless deploy --stage sandbox --verbose
+        env:
+          AWS_DEPLOYMENT_ROLE_ARN: arn:aws:iam::266934024307:role/AttBridgeSandboxCloudFormationRole
+          BUGSNAG_DATA_API_KEY: ${{ secrets.BUGSNAG_DATA_API_KEY }}
+          BUGSNAG_ORGANIZATION: ${{ secrets.BUGSNAG_ORGANIZATION }}
+          EVENTS_RESERVED_CONCURRENCY: 5
+          VOXIE_EVENT_FIREHOSE_TOPIC: arn:aws:sns:us-east-1:266934024307:voxie-firehose-event-bus-sandbox
+          VOXIE_MONITORING_FIREHOSE_TOPIC: arn:aws:sns:us-east-1:266934024307:monitoring-firehose
+          ATT_ADDRESS_AUTH_URL: https://ovalsgis-msexternal.test.att.com/Services/rest/ovalsgis/v2/addressValidationServiceQualificationUnifiedBill/oauth2/token
+          ATT_ADDRESS_URL: https://ovalsgis-msexternal.test.att.com/Services/rest/ovalsgis/v2/addressValidationServiceQualificationUnifiedBill
+          ATT_CLIENT_ID: voxie
+          ATT_CLIENT_SECRET: voxie1test
+          ATT_USER_NAME: voxie
+          ATT_PASSWORD: voxie123#test
+          ATT_TEAM_ID: 1
+
+  deploy_qa:
+    name: deploy qa
+    runs-on: ubuntu-20.04
+    if: github.ref == 'refs/heads/qa'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16.x
+
+      - name: Setup Pnpm
+        uses: pnpm/action-setup@v2.2.1
+        with:
+          run_install: true
+          version: 6.32.6
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.8'
+
+      - name: Install Serverless
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 2
+          max_attempts: 5
+          command: wget -nv https://github.com/serverless/serverless/releases/download/v3.16.0/serverless-linux-x64 -O /usr/local/bin/serverless && chmod +x /usr/local/bin/serverless
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::266934024307:role/AttBridgeQaServerlessRole
+          role-duration-seconds: 3600
+          aws-region: us-east-1
+
+      - name: Serverless Deploy
+        run: serverless deploy --stage qa --verbose
+        env:
+          AWS_DEPLOYMENT_ROLE_ARN: arn:aws:iam::266934024307:role/AttBridgeQaCloudFormationRole
+          BUGSNAG_DATA_API_KEY: ${{ secrets.BUGSNAG_DATA_API_KEY }}
+          BUGSNAG_ORGANIZATION: ${{ secrets.BUGSNAG_ORGANIZATION }}
+          EVENTS_RESERVED_CONCURRENCY: 10
+          VOXIE_EVENT_FIREHOSE_TOPIC: arn:aws:sns:us-east-1:266934024307:voxie-firehose-event-bus-qa
+          VOXIE_MONITORING_FIREHOSE_TOPIC: arn:aws:sns:us-east-1:266934024307:monitoring-firehose
+          ATT_ADDRESS_AUTH_URL: https://ovalsgis-msexternal.test.att.com/Services/rest/ovalsgis/v2/addressValidationServiceQualificationUnifiedBill/oauth2/token
+          ATT_ADDRESS_URL: https://ovalsgis-msexternal.test.att.com/Services/rest/ovalsgis/v2/addressValidationServiceQualificationUnifiedBill
+          ATT_CLIENT_ID: ${{ secrets.QA_ATT_CLIENT_ID }}
+          ATT_CLIENT_SECRET: ${{ secrets.QA_ATT_CLIENT_SECRET }}
+          ATT_USER_NAME: ${{ secrets.QA_ATT_USER_NAME }}
+          ATT_PASSWORD: ${{ secrets.QA_ATT_PASSWORD }}
+          ATT_TEAM_ID: ${{ secrets.QA_ATT_TEAM_ID }}
+
+  deploy_production:
+    name: deploy production
+    runs-on: ubuntu-20.04
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16.x
+
+      - name: Setup Pnpm
+        uses: pnpm/action-setup@v2.2.1
+        with:
+          run_install: true
+          version: 6.32.6
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.8'
+
+      - name: Install Serverless
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 2
+          max_attempts: 5
+          command: wget -nv https://github.com/serverless/serverless/releases/download/v3.16.0/serverless-linux-x64 -O /usr/local/bin/serverless && chmod +x /usr/local/bin/serverless
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::266934024307:role/AttBridgeProductionServerlessRole
+          role-duration-seconds: 3600
+          aws-region: us-east-1
+
+      - name: Serverless Deploy
+        run: serverless deploy --stage production --verbose
+        env:
+          AWS_DEPLOYMENT_ROLE_ARN: arn:aws:iam::266934024307:role/AttBridgeProductionCloudFormationRole
+          BUGSNAG_DATA_API_KEY: ${{ secrets.BUGSNAG_DATA_API_KEY }}
+          BUGSNAG_ORGANIZATION: ${{ secrets.BUGSNAG_ORGANIZATION }}
+          EVENTS_RESERVED_CONCURRENCY: 50
+          VOXIE_EVENT_FIREHOSE_TOPIC: arn:aws:sns:us-east-1:266934024307:voxie-firehose-event-bus
+          VOXIE_MONITORING_FIREHOSE_TOPIC: arn:aws:sns:us-east-1:266934024307:monitoring-firehose
+          ATT_ADDRESS_AUTH_URL: https://ovalsgis-msexternal.att.com/Services/rest/ovalsgis/v2/addressValidationServiceQualificationUnifiedBill/oauth2/token
+          ATT_ADDRESS_URL: https://ovalsgis-msexternal.att.com/Services/rest/ovalsgis/v2/addressValidationServiceQualificationUnifiedBill
+          ATT_CLIENT_ID: ${{ secrets.PRODUCTION_ATT_CLIENT_ID }}
+          ATT_CLIENT_SECRET: ${{ secrets.PRODUCTION_ATT_CLIENT_SECRET }}
+          ATT_USER_NAME: ${{ secrets.PRODUCTION_ATT_USER_NAME }}
+          ATT_PASSWORD: ${{ secrets.PRODUCTION_ATT_PASSWORD }}
+          ATT_TEAM_ID: ${{ secrets.PRODUCTION_ATT_TEAM_ID }}

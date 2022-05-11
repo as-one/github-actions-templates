@@ -1,0 +1,181 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - sandbox
+      - qa
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy_sandbox:
+    name: Deploy sandbox
+    runs-on: ubuntu-20.04
+    if: github.ref == 'refs/heads/sandbox'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 14.x
+
+      - name: Install Serverless
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 2
+          max_attempts: 5
+          command: wget -nv https://github.com/serverless/serverless/releases/download/v3.16.0/serverless-linux-x64 -O /usr/local/bin/serverless && chmod +x /usr/local/bin/serverless
+
+      - name: Install Dependencies
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: |
+            yarn install
+            yarn global add @bugsnag/source-maps bugsnag-build-reporter
+
+      - name: Download Key
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: curl -f -L -o src/security/keys/public.pem https://registry.voxie.com/keys/core/202e0888.pem --create-dirs
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::266934024307:role/AnalyticsApiSandboxServerlessRole
+          role-duration-seconds: 3600
+          aws-region: us-east-2
+
+      - name: Serverless Deploy
+        run: serverless deploy --stage sandbox
+        env:
+          AWS_DEPLOYMENT_ROLE_ARN: arn:aws:iam::266934024307:role/AnalyticsApiSandboxCloudFormationRole
+          BUGSNAG_DATA_API_KEY: ${{ secrets.BUGSNAG_DATA_API_KEY }}
+          BUGSNAG_ORGANIZATION: ${{ secrets.BUGSNAG_ORGANIZATION }}
+          VOXIE_STAGE: sandbox
+          VOXIE_ENV_REGION: us-west-2
+          VOXIE_ENV_BUCKET: voxie.engineering.sandbox.services
+          VOXIE_ENV_PATH: analytics-api/env/sandbox
+          VOXIE_ENV_VERSION: To3jsWiGqzgOQP2GoW.sI2qGeFdzV7Nb
+
+  deploy_qa:
+    name: Deploy QA
+    runs-on: ubuntu-20.04
+    if: github.ref == 'refs/heads/qa'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 14.x
+
+      - name: Install Serverless
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 2
+          max_attempts: 5
+          command: wget -nv https://github.com/serverless/serverless/releases/download/v3.16.0/serverless-linux-x64 -O /usr/local/bin/serverless && chmod +x /usr/local/bin/serverless
+
+      - name: Install Dependencies
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: |
+            yarn install
+            yarn global add @bugsnag/source-maps bugsnag-build-reporter
+
+      - name: Download Key
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: curl -f -L -o src/security/keys/public.pem https://registry.voxie.com/keys/core/907adf19.pem --create-dirs
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::266934024307:role/AnalyticsApiQaServerlessRole
+          role-duration-seconds: 3600
+          aws-region: us-east-1
+
+      - name: Serverless Deploy
+        run: serverless deploy --stage qa
+        env:
+          AWS_DEPLOYMENT_ROLE_ARN: arn:aws:iam::266934024307:role/AnalyticsApiQaCloudFormationRole
+          BUGSNAG_DATA_API_KEY: ${{ secrets.BUGSNAG_DATA_API_KEY }}
+          BUGSNAG_ORGANIZATION: ${{ secrets.BUGSNAG_ORGANIZATION }}
+          VOXIE_STAGE: qa
+          VOXIE_ENV_REGION: us-west-2
+          VOXIE_ENV_BUCKET: voxie.engineering.sandbox.services
+          VOXIE_ENV_PATH: analytics-api/env/qa
+          VOXIE_ENV_VERSION: HDAhM74vDl2HIu0Fg76r_4p._8YNt92f
+
+  deploy_production:
+    name: Deploy production
+    runs-on: ubuntu-20.04
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 14.x
+
+      - name: Install Serverless
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 2
+          max_attempts: 5
+          command: wget -nv https://github.com/serverless/serverless/releases/download/v3.16.0/serverless-linux-x64 -O /usr/local/bin/serverless && chmod +x /usr/local/bin/serverless
+
+      - name: Install Dependencies
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: |
+            yarn install
+            yarn global add @bugsnag/source-maps bugsnag-build-reporter
+
+      - name: Download Key
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: curl -f -L -o src/security/keys/public.pem https://registry.voxie.com/keys/core/d5b38219.pem --create-dirs
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::266934024307:role/AnalyticsApiProductionServerlessRole
+          role-duration-seconds: 3600
+          aws-region: us-east-1
+
+      - name: Serverless Deploy
+        run: serverless deploy --stage production
+        env:
+          AWS_DEPLOYMENT_ROLE_ARN: arn:aws:iam::266934024307:role/AnalyticsApiProductionCloudFormationRole
+          BUGSNAG_DATA_API_KEY: ${{ secrets.BUGSNAG_DATA_API_KEY }}
+          BUGSNAG_ORGANIZATION: ${{ secrets.BUGSNAG_ORGANIZATION }}
+          VOXIE_STAGE: production
+          VOXIE_ENV_REGION: us-east-1
+          VOXIE_ENV_BUCKET: voxie.engineering.production.services
+          VOXIE_ENV_PATH: analytics-api/env/production
+          VOXIE_ENV_VERSION: 7iI5u9rlx1.ETO94OwKfU1kSK2kOyh_q

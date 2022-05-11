@@ -1,0 +1,349 @@
+name: target for new release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  release-sandbox:
+    name: release sandbox
+    runs-on: ubuntu-20.04
+    if: ${{ startsWith(github.event.release.tag_name, 'sandbox') }}
+
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::266934024307:role/CoreSandboxGitHubReleaseRole
+          role-duration-seconds: 3600
+          aws-region: us-east-2
+
+      - name: Build AppSpec
+        run: |
+          ./hack/build-appspec.sh ${{ github.event.release.tag_name }}
+        env:
+          APP_NAME: ${{ secrets.SANDBOX_APP_NAME }}
+
+      - name: Upload AppSpec
+        run: |
+          aws s3 cp ./release/appspec-web.json s3://${PROJECT_BUCKET}/appspecs/${GITHUB_SHA}-web.json
+          aws s3 cp ./release/appspec-cli.json s3://${PROJECT_BUCKET}/appspecs/${GITHUB_SHA}-cli.json
+          aws s3 cp ./release/appspec-queue.json s3://${PROJECT_BUCKET}/appspecs/${GITHUB_SHA}-queue.json
+          aws s3 cp ./release/appspec-msg.json s3://${PROJECT_BUCKET}/appspecs/${GITHUB_SHA}-msg.json
+        env:
+          PROJECT_BUCKET: ${{ secrets.SANDBOX_PROJECT_BUCKET }}
+
+      - name: Build Release
+        run: |
+          cat ./release/release-template.json \
+            | jq ".applicationName = \"${APP_NAME}\"" \
+            | jq ".deploymentGroupName = \"${APP_NAME}\"" \
+            | jq ".revision .s3Location .bucket = \"${PROJECT_BUCKET}/appspecs\"" \
+            | jq ".revision .s3Location .key = \"${GITHUB_SHA}-web.json\"" \
+            > ./release/release-web.json
+          cat ./release/release-template.json \
+            | jq ".applicationName = \"${APP_NAME}\"" \
+            | jq ".deploymentGroupName = \"${APP_NAME}\"" \
+            | jq ".revision .s3Location .bucket = \"${PROJECT_BUCKET}/appspecs\"" \
+            | jq ".revision .s3Location .key = \"${GITHUB_SHA}-cli.json\"" \
+            > ./release/release-cli.json
+          cat ./release/release-template.json \
+            | jq ".applicationName = \"${APP_NAME}\"" \
+            | jq ".deploymentGroupName = \"${APP_NAME}\"" \
+            | jq ".revision .s3Location .bucket = \"${PROJECT_BUCKET}/appspecs\"" \
+            | jq ".revision .s3Location .key = \"${GITHUB_SHA}-queue.json\"" \
+            > ./release/release-queue.json
+          cat ./release/release-template.json \
+            | jq ".applicationName = \"${APP_NAME}\"" \
+            | jq ".deploymentGroupName = \"${APP_NAME}\"" \
+            | jq ".revision .s3Location .bucket = \"${PROJECT_BUCKET}/appspecs\"" \
+            | jq ".revision .s3Location .key = \"${GITHUB_SHA}-msg.json\"" \
+            > ./release/release-msg.json
+          cat ./release/release-web.json
+          cat ./release/release-cli.json
+          cat ./release/release-queue.json
+          cat ./release/release-msg.json
+        env:
+          APP_NAME: ${{ secrets.SANDBOX_APP_NAME }}
+          PROJECT_BUCKET: ${{ secrets.SANDBOX_PROJECT_BUCKET }}
+
+      - name: Trigger Release
+        run: |
+          aws deploy create-deployment \
+            --application-name $APP_NAME \
+            --deployment-group-name $APP_NAME \
+            --cli-input-json file://release/release-web.json
+          sleep 15
+          aws deploy create-deployment \
+            --application-name $APP_NAME \
+            --deployment-group-name $APP_NAME \
+            --cli-input-json file://release/release-cli.json
+          sleep 15
+          aws deploy create-deployment \
+            --application-name $APP_NAME \
+            --deployment-group-name $APP_NAME \
+            --cli-input-json file://release/release-queue.json
+          sleep 15
+          aws deploy create-deployment \
+            --application-name $APP_NAME \
+            --deployment-group-name $APP_NAME \
+            --cli-input-json file://release/release-msg.json
+        env:
+          APP_NAME: ${{ secrets.SANDBOX_APP_NAME }}
+
+      - name: Notify Bugsnag
+        run: |
+          npm i --global bugsnag-build-reporter
+          bugsnag-build-reporter \
+            --api-key "${BUGSNAG_BACKEND_KEY}" \
+            --app-version "${GITHUB_SHA}" \
+            --release-stage sandbox \
+            --source-control-provider github \
+            --source-control-repository "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --source-control-revision "${GITHUB_SHA}" \
+            --builder-name "GitHub Actions"
+          bugsnag-build-reporter \
+            --api-key "${BUGSNAG_FRONTEND_KEY}" \
+            --app-version "${GITHUB_SHA}" \
+            --release-stage sandbox \
+            --source-control-provider github \
+            --source-control-repository "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --source-control-revision "${GITHUB_SHA}" \
+            --builder-name "GitHub Actions"
+        env:
+          BUGSNAG_BACKEND_KEY: ${{ secrets.BUGSNAG_BACKEND_KEY }}
+          BUGSNAG_FRONTEND_KEY: ${{ secrets.BUGSNAG_FRONTEND_KEY }}
+
+  release-qa:
+    name: release qa
+    runs-on: ubuntu-20.04
+    if: ${{ startsWith(github.event.release.tag_name, 'qa') }}
+
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::266934024307:role/CoreQaGitHubReleaseRole
+          role-duration-seconds: 3600
+          aws-region: us-west-2
+
+      - name: Build AppSpec
+        run: |
+          ./hack/build-appspec.sh ${{ github.event.release.tag_name }}
+        env:
+          APP_NAME: ${{ secrets.QA_APP_NAME }}
+
+      - name: Upload AppSpec
+        run: |
+          aws s3 cp ./release/appspec-web.json s3://${PROJECT_BUCKET}/appspecs/${GITHUB_SHA}-web.json
+          aws s3 cp ./release/appspec-cli.json s3://${PROJECT_BUCKET}/appspecs/${GITHUB_SHA}-cli.json
+          aws s3 cp ./release/appspec-queue.json s3://${PROJECT_BUCKET}/appspecs/${GITHUB_SHA}-queue.json
+          aws s3 cp ./release/appspec-msg.json s3://${PROJECT_BUCKET}/appspecs/${GITHUB_SHA}-msg.json
+        env:
+          PROJECT_BUCKET: ${{ secrets.QA_PROJECT_BUCKET }}
+
+      - name: Build Release
+        run: |
+          cat ./release/release-template.json \
+            | jq ".applicationName = \"${APP_NAME}\"" \
+            | jq ".deploymentGroupName = \"${APP_NAME}\"" \
+            | jq ".revision .s3Location .bucket = \"${PROJECT_BUCKET}/appspecs\"" \
+            | jq ".revision .s3Location .key = \"${GITHUB_SHA}-web.json\"" \
+            > ./release/release-web.json
+          cat ./release/release-template.json \
+            | jq ".applicationName = \"${APP_NAME}\"" \
+            | jq ".deploymentGroupName = \"${APP_NAME}\"" \
+            | jq ".revision .s3Location .bucket = \"${PROJECT_BUCKET}/appspecs\"" \
+            | jq ".revision .s3Location .key = \"${GITHUB_SHA}-cli.json\"" \
+            > ./release/release-cli.json
+          cat ./release/release-template.json \
+            | jq ".applicationName = \"${APP_NAME}\"" \
+            | jq ".deploymentGroupName = \"${APP_NAME}\"" \
+            | jq ".revision .s3Location .bucket = \"${PROJECT_BUCKET}/appspecs\"" \
+            | jq ".revision .s3Location .key = \"${GITHUB_SHA}-queue.json\"" \
+            > ./release/release-queue.json
+          cat ./release/release-template.json \
+            | jq ".applicationName = \"${APP_NAME}\"" \
+            | jq ".deploymentGroupName = \"${APP_NAME}\"" \
+            | jq ".revision .s3Location .bucket = \"${PROJECT_BUCKET}/appspecs\"" \
+            | jq ".revision .s3Location .key = \"${GITHUB_SHA}-msg.json\"" \
+            > ./release/release-msg.json
+          cat ./release/release-web.json
+          cat ./release/release-cli.json
+          cat ./release/release-queue.json
+          cat ./release/release-msg.json
+        env:
+          APP_NAME: ${{ secrets.QA_APP_NAME }}
+          PROJECT_BUCKET: ${{ secrets.QA_PROJECT_BUCKET }}
+
+      - name: Trigger Release
+        run: |
+          aws deploy create-deployment \
+            --application-name $APP_NAME \
+            --deployment-group-name $APP_NAME \
+            --cli-input-json file://release/release-web.json
+          sleep 15
+          aws deploy create-deployment \
+            --application-name $APP_NAME \
+            --deployment-group-name $APP_NAME \
+            --cli-input-json file://release/release-cli.json
+          sleep 15
+          aws deploy create-deployment \
+            --application-name $APP_NAME \
+            --deployment-group-name $APP_NAME \
+            --cli-input-json file://release/release-queue.json
+          sleep 15
+          aws deploy create-deployment \
+            --application-name $APP_NAME \
+            --deployment-group-name $APP_NAME \
+            --cli-input-json file://release/release-msg.json
+        env:
+          APP_NAME: ${{ secrets.QA_APP_NAME }}
+
+      - name: Notify Bugsnag
+        run: |
+          npm i --global bugsnag-build-reporter
+          bugsnag-build-reporter \
+            --api-key "${BUGSNAG_BACKEND_KEY}" \
+            --app-version "${GITHUB_SHA}" \
+            --release-stage staging \
+            --source-control-provider github \
+            --source-control-repository "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --source-control-revision "${GITHUB_SHA}" \
+            --builder-name "GitHub Actions"
+          bugsnag-build-reporter \
+            --api-key "${BUGSNAG_FRONTEND_KEY}" \
+            --app-version "${GITHUB_SHA}" \
+            --release-stage staging \
+            --source-control-provider github \
+            --source-control-repository "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --source-control-revision "${GITHUB_SHA}" \
+            --builder-name "GitHub Actions"
+        env:
+          BUGSNAG_BACKEND_KEY: ${{ secrets.BUGSNAG_BACKEND_KEY }}
+          BUGSNAG_FRONTEND_KEY: ${{ secrets.BUGSNAG_FRONTEND_KEY }}
+
+  release-production:
+    name: release production
+    runs-on: ubuntu-20.04
+    if: ${{ startsWith(github.event.release.tag_name, 'production') }}
+
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::266934024307:role/CoreProductionGitHubReleaseRole
+          role-duration-seconds: 3600
+          aws-region: us-west-2
+
+      - name: Build AppSpec
+        run: |
+          ./hack/build-appspec.sh ${{ github.event.release.tag_name }}
+        env:
+          APP_NAME: ${{ secrets.PRODUCTION_APP_NAME }}
+
+      - name: Upload AppSpec
+        run: |
+          aws s3 cp ./release/appspec-web.json s3://${PROJECT_BUCKET}/appspecs/${GITHUB_SHA}-web.json
+          aws s3 cp ./release/appspec-cli.json s3://${PROJECT_BUCKET}/appspecs/${GITHUB_SHA}-cli.json
+          aws s3 cp ./release/appspec-queue.json s3://${PROJECT_BUCKET}/appspecs/${GITHUB_SHA}-queue.json
+          aws s3 cp ./release/appspec-msg.json s3://${PROJECT_BUCKET}/appspecs/${GITHUB_SHA}-msg.json
+        env:
+          PROJECT_BUCKET: ${{ secrets.PRODUCTION_PROJECT_BUCKET }}
+
+      - name: Build Release
+        run: |
+          cat ./release/release-template.json \
+            | jq ".applicationName = \"${APP_NAME}\"" \
+            | jq ".deploymentGroupName = \"${APP_NAME}\"" \
+            | jq ".revision .s3Location .bucket = \"${PROJECT_BUCKET}/appspecs\"" \
+            | jq ".revision .s3Location .key = \"${GITHUB_SHA}-web.json\"" \
+            > ./release/release-web.json
+          cat ./release/release-template.json \
+            | jq ".applicationName = \"${APP_NAME}\"" \
+            | jq ".deploymentGroupName = \"${APP_NAME}\"" \
+            | jq ".revision .s3Location .bucket = \"${PROJECT_BUCKET}/appspecs\"" \
+            | jq ".revision .s3Location .key = \"${GITHUB_SHA}-cli.json\"" \
+            > ./release/release-cli.json
+          cat ./release/release-template.json \
+            | jq ".applicationName = \"${APP_NAME}\"" \
+            | jq ".deploymentGroupName = \"${APP_NAME}\"" \
+            | jq ".revision .s3Location .bucket = \"${PROJECT_BUCKET}/appspecs\"" \
+            | jq ".revision .s3Location .key = \"${GITHUB_SHA}-queue.json\"" \
+            > ./release/release-queue.json
+          cat ./release/release-template.json \
+            | jq ".applicationName = \"${APP_NAME}\"" \
+            | jq ".deploymentGroupName = \"${APP_NAME}\"" \
+            | jq ".revision .s3Location .bucket = \"${PROJECT_BUCKET}/appspecs\"" \
+            | jq ".revision .s3Location .key = \"${GITHUB_SHA}-msg.json\"" \
+            > ./release/release-msg.json
+          cat ./release/release-web.json
+          cat ./release/release-cli.json
+          cat ./release/release-queue.json
+          cat ./release/release-msg.json
+        env:
+          APP_NAME: ${{ secrets.PRODUCTION_APP_NAME }}
+          PROJECT_BUCKET: ${{ secrets.PRODUCTION_PROJECT_BUCKET }}
+
+      - name: Trigger Release
+        run: |
+          aws deploy create-deployment \
+            --application-name $APP_NAME \
+            --deployment-group-name $APP_NAME \
+            --cli-input-json file://release/release-web.json
+          sleep 15
+          aws deploy create-deployment \
+            --application-name $APP_NAME \
+            --deployment-group-name $APP_NAME \
+            --cli-input-json file://release/release-cli.json
+          sleep 15
+          aws deploy create-deployment \
+            --application-name $APP_NAME \
+            --deployment-group-name $APP_NAME \
+            --cli-input-json file://release/release-queue.json
+          sleep 15
+          aws deploy create-deployment \
+            --application-name $APP_NAME \
+            --deployment-group-name $APP_NAME \
+            --cli-input-json file://release/release-msg.json
+        env:
+          APP_NAME: ${{ secrets.PRODUCTION_APP_NAME }}
+
+      - name: Notify Bugsnag
+        run: |
+          npm i --global bugsnag-build-reporter
+          bugsnag-build-reporter \
+            --api-key "${BUGSNAG_BACKEND_KEY}" \
+            --app-version "${GITHUB_SHA}" \
+            --release-stage production \
+            --source-control-provider github \
+            --source-control-repository "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --source-control-revision "${GITHUB_SHA}" \
+            --builder-name "GitHub Actions"
+          bugsnag-build-reporter \
+            --api-key "${BUGSNAG_FRONTEND_KEY}" \
+            --app-version "${GITHUB_SHA}" \
+            --release-stage production \
+            --source-control-provider github \
+            --source-control-repository "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --source-control-revision "${GITHUB_SHA}" \
+            --builder-name "GitHub Actions"
+        env:
+          BUGSNAG_BACKEND_KEY: ${{ secrets.BUGSNAG_BACKEND_KEY }}
+          BUGSNAG_FRONTEND_KEY: ${{ secrets.BUGSNAG_FRONTEND_KEY }}
